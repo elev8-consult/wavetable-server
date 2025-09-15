@@ -1,0 +1,24 @@
+const express = require('express');
+const router = express.Router();
+const attendanceController = require('../controllers/attendance.controller');
+const auth = require('../middleware/auth');
+
+// Create attendance (staff or admin)
+router.post('/', auth(['staff', 'admin']), attendanceController.createAttendance);
+
+// Bulk mark session as present (staff or admin)
+router.post('/bulk/mark-present', auth(['staff', 'admin']), attendanceController.bulkMarkSessionPresent);
+
+// List/search attendance (staff or admin)
+router.get('/', auth(['staff', 'admin']), attendanceController.getAttendances);
+
+// Get one attendance record (staff or admin)
+router.get('/:id', auth(['staff', 'admin']), attendanceController.getAttendanceById);
+
+// Update attendance (staff or admin)
+router.put('/:id', auth(['staff', 'admin']), attendanceController.updateAttendance);
+
+// Delete attendance record (staff or admin)
+router.delete('/:id', auth(['staff', 'admin']), attendanceController.deleteAttendance);
+
+module.exports = router;
