@@ -1,18 +1,15 @@
 // server/models/Attendance.js
 const mongoose = require('mongoose');
+
 const AttendanceSchema = new mongoose.Schema({
-  classId: { type: mongoose.Schema.Types.ObjectId, ref: 'Class' },
-  roomId: { type: mongoose.Schema.Types.ObjectId, ref: 'Room' },
-  bookingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Booking' },
+  bookingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Booking', required: true },
+  clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', required: true },
   sessionDate: { type: Date, required: true },
-  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', required: true },
-  status: { type: String, enum: ['present', 'absent'], default: 'absent' },
+  status: { type: String, enum: ['scheduled', 'present', 'absent', 'cancelled'], default: 'scheduled' },
+  notes: { type: String }
 }, { timestamps: true });
 
-// prevent duplicate attendance rows for same class/session/student
-AttendanceSchema.index({ classId: 1, sessionDate: 1, studentId: 1 }, { unique: true, partialFilterExpression: { classId: { $exists: true } } });
-AttendanceSchema.index({ bookingId: 1 });
-// Prevent duplicate attendance rows for the same booking/session/student
-AttendanceSchema.index({ bookingId: 1, sessionDate: 1, studentId: 1 }, { unique: true, partialFilterExpression: { bookingId: { $exists: true } } });
+AttendanceSchema.index({ bookingId: 1, clientId: 1 }, { unique: true });
+AttendanceSchema.index({ sessionDate: 1 });
 
 module.exports = mongoose.model('Attendance', AttendanceSchema);

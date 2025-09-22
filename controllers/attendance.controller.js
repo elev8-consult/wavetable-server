@@ -1,44 +1,95 @@
 const Attendance = require('../models/Attendance');
+const Booking = require('../models/Booking');
+const Client = require('../models/Client');
 
-// Create a single attendance record
+function buildAttendanceFilter(query = {}) {
+  const filter = {};
+  if (query.bookingId) filter.bookingId = query.bookingId;
+  if (query.clientId) filter.clientId = query.clientId;
+  if (query.status) filter.status = query.status;
+  if (query.startDate || query.endDate) {
+    filter.sessionDate = {};
+    if (query.startDate) filter.sessionDate.$gte = new Date(query.startDate);
+    if (query.endDate) filter.sessionDate.$lte = new Date(query.endDate);
+  } else if (query.sessionDate) {
+    filter.sessionDate = new Date(query.sessionDate);
+  }
+  return filter;
+}
+
+async function validateRefs({ bookingId, clientId }) {
+  if (bookingId) {
+    const booking = await Booking.findById(bookingId).select('_id clientId startDate');
+    if (!booking) throw new Error('Booking does not exist');
+    if (!clientId) {
+      return {
+        bookingClientId: booking.clientId,
+        sessionDate: booking.startDate,
+      };
+    }
+    return {
+      bookingClientId: booking.clientId,
+      sessionDate: booking.startDate,
+    };
+  }
+  return {};
+}
+
+// Create or upsert attendance record for a booking/client pair
 exports.createAttendance = async (req, res) => {
   try {
-    const attendance = new Attendance(req.body);
-    await attendance.save();
+    const { bookingId, clientId, sessionDate, status, notes } = req.body || {};
+    if (!bookingId) return res.status(400).json({ message: 'bookingId is required' });
+    const { bookingClientId, sessionDate: bookingSessionDate } = await validateRefs({ bookingId, clientId });
+
+    const resolvedClientId = clientId || bookingClientId;
+    if (!resolvedClientId) return res.status(400).json({ message: 'clientId is required' });
+    const clientExists = await Client.exists({ _id: resolvedClientId });
+    if (!clientExists) return res.status(400).json({ message: 'Client does not exist' });
+
+    const resolvedSessionDate = sessionDate ? new Date(sessionDate) : bookingSessionDate ? new Date(bookingSessionDate) : null;
+    if (!resolvedSessionDate || Number.isNaN(resolvedSessionDate.getTime())) {
+      return res.status(400).json({ message: 'sessionDate is required' });
+    }
+
+    const payload = {
+      bookingId,
+      clientId: resolvedClientId,
+      sessionDate: resolvedSessionDate,
+      status: status || 'scheduled',
+    };
+    if (notes !== undefined) payload.notes = notes;
+
+    const attendance = await Attendance.findOneAndUpdate(
+      { bookingId, clientId: resolvedClientId },
+      { $set: payload },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
     res.status(201).json(attendance);
   } catch (error) {
     res.status(400).json({ message: 'Error creating attendance', error: error.message });
   }
 };
 
-// List/search attendance
 exports.getAttendances = async (req, res) => {
   try {
-    const filter = {};
-    if (req.query.classId) filter.classId = req.query.classId;
-    if (req.query.roomId) filter.roomId = req.query.roomId;
-    if (req.query.bookingId) filter.bookingId = req.query.bookingId;
-    if (req.query.sessionDate) filter.sessionDate = new Date(req.query.sessionDate);
-    if (req.query.studentId) filter.studentId = req.query.studentId;
+    const filter = buildAttendanceFilter(req.query);
     const items = await Attendance.find(filter)
-      .populate('studentId')
-      .populate('classId')
-      .populate('bookingId')
-      .populate('roomId');
+      .sort({ sessionDate: 1 })
+      .populate('clientId')
+      .populate('bookingId');
     res.json(items);
   } catch (err) {
     res.status(500).json({ message: 'Error fetching attendance', error: err.message });
   }
 };
 
-// Get one attendance by id
 exports.getAttendanceById = async (req, res) => {
   try {
     const attendance = await Attendance.findById(req.params.id)
-      .populate('studentId')
-      .populate('classId')
-      .populate('bookingId')
-      .populate('roomId');
+      .populate('clientId')
+      .populate('bookingId');
     if (!attendance) return res.status(404).json({ message: 'Attendance record not found' });
     res.json(attendance);
   } catch (err) {
@@ -46,10 +97,13 @@ exports.getAttendanceById = async (req, res) => {
   }
 };
 
-// Update attendance
 exports.updateAttendance = async (req, res) => {
   try {
-    const attendance = await Attendance.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const update = { ...req.body };
+    if (update.sessionDate) {
+      update.sessionDate = new Date(update.sessionDate);
+    }
+    const attendance = await Attendance.findByIdAndUpdate(req.params.id, update, { new: true });
     if (!attendance) return res.status(404).json({ message: 'Attendance record not found' });
     res.json(attendance);
   } catch (err) {
@@ -57,7 +111,6 @@ exports.updateAttendance = async (req, res) => {
   }
 };
 
-// Delete attendance
 exports.deleteAttendance = async (req, res) => {
   try {
     const attendance = await Attendance.findByIdAndDelete(req.params.id);
@@ -68,16 +121,12 @@ exports.deleteAttendance = async (req, res) => {
   }
 };
 
-// Bulk mark all attendances for a given class/sessionDate as present
+// Legacy endpoint compatibility: mark all attendance entries for a booking as present
 exports.bulkMarkSessionPresent = async (req, res) => {
   try {
-    const { classId, sessionDate } = req.body;
-    if (!classId || !sessionDate) return res.status(400).json({ message: 'classId and sessionDate are required' });
-    const date = new Date(sessionDate);
-    const result = await Attendance.updateMany(
-      { classId, sessionDate: date },
-      { $set: { status: 'present' } }
-    );
+    const { bookingId } = req.body || {};
+    if (!bookingId) return res.status(400).json({ message: 'bookingId is required' });
+    const result = await Attendance.updateMany({ bookingId }, { $set: { status: 'present' } });
     res.json({ modifiedCount: result.modifiedCount });
   } catch (err) {
     res.status(500).json({ message: 'Error bulk marking attendance', error: err.message });

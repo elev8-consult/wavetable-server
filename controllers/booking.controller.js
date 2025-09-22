@@ -1,9 +1,7 @@
 const Booking = require('../models/Booking');
 const Equipment = require('../models/Equipment');
-const Enrollment = require('../models/Enrollment');
 const Attendance = require('../models/Attendance');
 const Room = require('../models/Room');
-const ClassModel = require('../models/Class');
 const Client = require('../models/Client');
 const { getCalendarClient } = require('./calendar.controller');
 const { findServiceByCode, getServiceCategory } = require('../config/services');
@@ -21,25 +19,14 @@ async function buildCalendarEventFromBooking(booking) {
 
   let endDate = booking.endDate ? new Date(booking.endDate) : null;
   const startDate = new Date(booking.startDate);
-
-  // If endDate missing and it's a class, try to infer from sessionLength (minutes)
-  if (!endDate && booking.serviceType === 'class' && booking.classId) {
-    try {
-      const cls = await ClassModel.findById(booking.classId);
-      if (cls && cls.sessionLength) {
-        endDate = new Date(startDate.getTime() + cls.sessionLength * 60000);
-      }
-    } catch (e) {
-      // ignore; will fallback below
-    }
+  const serviceDef = findServiceByCode(booking.serviceCode);
+  if (!endDate) {
+    const durationMinutes = serviceDef?.defaults?.durationMinutes || 60;
+    endDate = new Date(startDate.getTime() + durationMinutes * 60000);
   }
-  // Final fallback: default to 60 minutes if still missing
-  if (!endDate) endDate = new Date(startDate.getTime() + 60 * 60000);
 
-  // Fetch optional names
   let roomName = '';
   let equipmentName = '';
-  let className = '';
   let clientName = '';
   try {
     if (booking.roomId) {
@@ -50,17 +37,12 @@ async function buildCalendarEventFromBooking(booking) {
       const eq = await Equipment.findById(booking.equipmentId).select('name');
       equipmentName = eq?.name || '';
     }
-    if (booking.classId) {
-      const cls = await ClassModel.findById(booking.classId).select('name');
-      className = cls?.name || '';
-    }
     if (booking.clientId) {
       const cl = await Client.findById(booking.clientId).select('name');
       clientName = cl?.name || '';
     }
   } catch (_) {}
 
-  const serviceDef = findServiceByCode(booking.serviceCode);
   const serviceLabel = serviceDef?.name || booking.serviceType;
 
   let summary = serviceLabel || 'Booking';
@@ -70,12 +52,6 @@ async function buildCalendarEventFromBooking(booking) {
       break;
     case 'equipment':
       summary = `Equipment: ${equipmentName || serviceLabel || booking.equipmentId || ''}`.trim();
-      break;
-    case 'class':
-      summary = `Class: ${className || serviceLabel || booking.classId || ''}`.trim();
-      break;
-    case 'service':
-      summary = serviceLabel || 'Service Booking';
       break;
     default:
       summary = serviceLabel || 'Booking';
@@ -90,7 +66,6 @@ async function buildCalendarEventFromBooking(booking) {
   if (serviceDef) descriptionLines.push(`Service: ${serviceDef.name}`);
   if (roomName) descriptionLines.push(`Room: ${roomName}`);
   if (equipmentName) descriptionLines.push(`Equipment: ${equipmentName}`);
-  if (className) descriptionLines.push(`Class: ${className}`);
   if (typeof booking.totalFee === 'number') {
     const currency = booking.priceCurrency ? ` ${booking.priceCurrency}` : '';
     descriptionLines.push(`Price: ${booking.totalFee}${currency}`);
@@ -162,6 +137,51 @@ async function deleteCalendarEvent(booking) {
   }
 }
 
+async function fetchCalendarConflicts(startDate, endDate, { excludeBookingId, existingGoogleIds = [] } = {}) {
+  const calendar = getCalendarClient();
+  if (!calendar || !CALENDAR_ID) return [];
+  try {
+    const response = await calendar.events.list({
+      calendarId: CALENDAR_ID,
+      timeMin: startDate.toISOString(),
+      timeMax: endDate.toISOString(),
+      singleEvents: true,
+      orderBy: 'startTime'
+    });
+    let excludeGoogleId = null;
+    if (excludeBookingId) {
+      const booking = await Booking.findById(excludeBookingId).select('googleEventId');
+      excludeGoogleId = booking?.googleEventId || null;
+    }
+    const conflicts = (response.data.items || []).filter(event => {
+      const eventId = event.id;
+      if (!eventId) return false;
+      if (excludeGoogleId && eventId === excludeGoogleId) return false;
+      if (existingGoogleIds.includes(eventId)) return false;
+      const start = event.start?.dateTime || event.start?.date;
+      const end = event.end?.dateTime || event.end?.date;
+      if (!start || !end) return false;
+      const eventStart = new Date(start);
+      const eventEnd = new Date(end);
+      if (Number.isNaN(eventStart.getTime()) || Number.isNaN(eventEnd.getTime())) return false;
+      if (event.start?.date && !event.start?.dateTime) {
+        eventEnd.setDate(eventEnd.getDate() - 1);
+        eventEnd.setHours(23, 59, 59, 999);
+      }
+      return eventStart < endDate && eventEnd > startDate;
+    }).map(event => ({
+      id: event.id,
+      summary: event.summary,
+      start: event.start,
+      end: event.end
+    }));
+    return conflicts;
+  } catch (err) {
+    console.warn('Calendar availability check failed:', err.message);
+    return [];
+  }
+}
+
 // Create new booking with basic conflict checks
 exports.createBooking = async (req, res) => {
   try {
@@ -171,7 +191,6 @@ exports.createBooking = async (req, res) => {
       staffId,
       equipmentId,
       roomId,
-      classId,
       startDate: startRaw,
       endDate: endRaw,
       serviceCode,
@@ -283,15 +302,17 @@ exports.createBooking = async (req, res) => {
       if (conflict) {
         return res.status(409).json({ message: 'Equipment is already booked for the selected time range' });
       }
-    } else if (serviceType === 'class') {
-      const requiresClassId = serviceDef?.requiresClassId !== false;
-      if (requiresClassId && !classId) {
-        return res.status(400).json({ message: 'classId is required for class bookings' });
-      }
-    } else if (serviceType === 'service') {
+    } else if (serviceType === 'service' || serviceType === 'class') {
       if (!startDateValid) return res.status(400).json({ message: 'startDate is required for service bookings' });
       if (!endDate) return res.status(400).json({ message: 'endDate is required for service bookings' });
       if (endDate <= startDateValid) return res.status(400).json({ message: 'endDate must be after startDate' });
+    }
+
+    if (startDateValid && endDate) {
+      const calendarConflicts = await fetchCalendarConflicts(startDateValid, endDate);
+      if (calendarConflicts.length) {
+        return res.status(409).json({ message: 'Selected time conflicts with existing calendar events', conflicts: calendarConflicts });
+      }
     }
 
     if (typeof discountedPrice === 'number' && discountedPrice > fullPrice) {
@@ -320,7 +341,6 @@ exports.createBooking = async (req, res) => {
       staffId,
       equipmentId,
       roomId,
-      classId,
       startDate: startDateValid,
       endDate,
       fullPrice,
@@ -330,75 +350,26 @@ exports.createBooking = async (req, res) => {
       addOns: normalizedAddOns,
       paymentStatus: paymentStatus ?? undefined,
     });
+
     await booking.save();
     // Attempt to sync to Google Calendar
     try {
       await createOrUpdateCalendarEvent(booking);
     } catch (_) {}
 
-    // Auto-create attendance for class bookings: for each enrolled student create an Attendance for the session
     try {
-      if (booking.serviceType === 'class' && booking.classId && booking.startDate) {
-        // find enrollments for the class
-        const enrollments = await Enrollment.find({ classId: booking.classId });
-
-        // Determine which session dates to create attendance for.
-        // If booking has an endDate, create for all class.schedule dates that fall between startDate and endDate (inclusive).
-        // Otherwise, create only for booking.startDate.
-        const classModel = require('../models/Class');
-        const cls = await classModel.findById(booking.classId);
-        let sessionDates = [];
-        if (cls && Array.isArray(cls.schedule) && cls.schedule.length) {
-          if (booking.endDate) {
-            const start = new Date(booking.startDate);
-            const end = new Date(booking.endDate);
-            sessionDates = cls.schedule.map(d => new Date(d)).filter(d => d >= start && d <= end);
-          } else {
-            // use the booking.startDate as the session
-            sessionDates = [new Date(booking.startDate)];
-          }
-        } else {
-          // fallback: use booking.startDate
-          sessionDates = [new Date(booking.startDate)];
-        }
-
-        for (const sessionDate of sessionDates) {
-          for (const en of enrollments) {
-            try {
-              const att = new Attendance({
-                classId: booking.classId,
-                bookingId: booking._id,
-                sessionDate,
-                studentId: en.studentId,
-                status: 'absent'
-              });
-              await att.save();
-            } catch (err) {
-              if (err.code && err.code === 11000) continue; // ignore duplicates
-              console.error('Attendance create error', err.message);
-            }
-          }
-        }
-      }
-
-      // For room bookings create an attendance entry for the booking client
-      if (booking.serviceType === 'room' && booking.roomId && booking.clientId && booking.startDate) {
-        try {
-          const att = new Attendance({
-            roomId: booking.roomId,
-            bookingId: booking._id,
+      if (booking.clientId && booking.startDate) {
+        await Attendance.findOneAndUpdate(
+          { bookingId: booking._id, clientId: booking.clientId },
+          {
             sessionDate: booking.startDate,
-            studentId: booking.clientId,
-            status: 'absent'
-          });
-          await att.save();
-        } catch (err) {
-          if (!(err.code && err.code === 11000)) console.error('Attendance create error', err.message);
-        }
+            status: 'scheduled'
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
       }
     } catch (err) {
-      // non-fatal: log and continue
-      console.error('Auto-attendance error', err.message);
+      console.error('Attendance create error', err.message);
     }
 
     // For equipment bookings, mark equipment as out
@@ -431,8 +402,7 @@ exports.getBookings = async (req, res) => {
       .populate('clientId')
       .populate('staffId')
       .populate('equipmentId')
-      .populate('roomId')
-      .populate('classId');
+      .populate('roomId');
     res.json(bookings);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching bookings', error: error.message });
@@ -446,8 +416,7 @@ exports.getBookingById = async (req, res) => {
       .populate('clientId')
       .populate('staffId')
       .populate('equipmentId')
-      .populate('roomId')
-      .populate('classId');
+      .populate('roomId');
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
     res.json(booking);
   } catch (error) {
@@ -498,7 +467,7 @@ exports.updateBooking = async (req, res) => {
 
     const serviceDef = findServiceByCode(booking.serviceCode);
 
-    const directFields = ['clientId', 'staffId', 'equipmentId', 'roomId', 'classId', 'status', 'priceNotes'];
+    const directFields = ['clientId', 'staffId', 'equipmentId', 'roomId', 'status', 'priceNotes'];
     for (const field of directFields) {
       if (payload[field] !== undefined) {
         if (field === 'priceNotes') {
@@ -618,18 +587,34 @@ exports.updateBooking = async (req, res) => {
       if (conflict) {
         return res.status(409).json({ message: 'Equipment is already booked for the selected time range' });
       }
-    } else if (booking.serviceType === 'class') {
-      const requiresClassId = serviceDef?.requiresClassId !== false;
-      if (requiresClassId && !booking.classId) {
-        return res.status(400).json({ message: 'classId is required for class bookings' });
-      }
     } else if (booking.serviceType === 'service') {
       if (!startDate) return res.status(400).json({ message: 'startDate is required for service bookings' });
       if (!endDate) return res.status(400).json({ message: 'endDate is required for service bookings' });
       if (endDate <= startDate) return res.status(400).json({ message: 'endDate must be after startDate' });
     }
 
+    if (startDate && endDate) {
+      const calendarConflicts = await fetchCalendarConflicts(startDate, endDate, {
+        excludeBookingId: booking._id,
+        existingGoogleIds: booking.googleEventId ? [booking.googleEventId] : []
+      });
+      if (calendarConflicts.length) {
+        return res.status(409).json({ message: 'Selected time conflicts with existing calendar events', conflicts: calendarConflicts });
+      }
+    }
+
     await booking.save();
+    try {
+      if (booking.clientId && booking.startDate) {
+        await Attendance.findOneAndUpdate(
+          { bookingId: booking._id, clientId: booking.clientId },
+          { $set: { sessionDate: booking.startDate } },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+      }
+    } catch (err) {
+      console.error('Attendance sync error', err.message);
+    }
     try {
       if (booking.status === 'canceled') await deleteCalendarEvent(booking);
       else await createOrUpdateCalendarEvent(booking);
@@ -679,7 +664,7 @@ exports.returnEquipment = async (req, res) => {
 // Check availability for room or equipment
 exports.checkAvailability = async (req, res) => {
   try {
-    const { serviceType, roomId, equipmentId, startDate: startRaw, endDate: endRaw } = req.query || {};
+    const { serviceType, roomId, equipmentId, startDate: startRaw, endDate: endRaw, excludeBookingId } = req.query || {};
     if (!serviceType) return res.status(400).json({ message: 'serviceType is required' });
     const startDate = startRaw ? new Date(startRaw) : null;
     const endDate = endRaw ? new Date(endRaw) : null;
@@ -703,8 +688,20 @@ exports.checkAvailability = async (req, res) => {
       return res.status(400).json({ message: 'Unsupported serviceType' });
     }
 
-    const conflicts = await Booking.find(filter).select('_id startDate endDate roomId equipmentId classId clientId');
-    res.json({ available: conflicts.length === 0, conflicts });
+    let conflicts = await Booking.find(filter).select('_id startDate endDate roomId equipmentId clientId googleEventId');
+    if (excludeBookingId) {
+      const excludeId = String(excludeBookingId);
+      conflicts = conflicts.filter(conflict => String(conflict._id) !== excludeId);
+    }
+
+    const existingIds = conflicts.filter(c => c.googleEventId).map(c => c.googleEventId);
+    const calendarConflicts = await fetchCalendarConflicts(startDate, endDate, {
+      excludeBookingId,
+      existingGoogleIds: existingIds
+    });
+
+    const available = conflicts.length === 0 && calendarConflicts.length === 0;
+    res.json({ available, conflicts, calendarConflicts });
   } catch (error) {
     res.status(500).json({ message: 'Error checking availability', error: error.message });
   }
