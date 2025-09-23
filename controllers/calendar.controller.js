@@ -2,12 +2,72 @@ const { google } = require('googleapis');
 const path = require('path');
 const fs = require('fs');
 
-// Load credentials (service account or OAuth2 client)
 const CREDENTIALS_PATH = path.join(__dirname, '../config/google-credentials.json');
-let credentials = null;
-if (fs.existsSync(CREDENTIALS_PATH)) {
-  credentials = require(CREDENTIALS_PATH);
+
+function normalisePrivateKey(key) {
+  if (typeof key !== 'string') return key;
+  return key.replace(/\\n/g, '\n');
 }
+
+function tryParseCredentials(raw) {
+  if (!raw) return null;
+  const candidates = [];
+  const trimmed = raw.trim();
+  candidates.push(trimmed);
+  if (!trimmed.startsWith('{')) {
+    try {
+      const decoded = Buffer.from(trimmed, 'base64').toString('utf8');
+      candidates.push(decoded.trim());
+    } catch (err) {
+      console.warn('Failed to base64 decode GOOGLE_CALENDAR credentials env:', err.message);
+    }
+  }
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed.private_key) {
+        parsed.private_key = normalisePrivateKey(parsed.private_key);
+      }
+      return parsed;
+    } catch (_) {
+      // try next candidate
+    }
+  }
+  console.warn('Unable to parse GOOGLE calendar credentials from environment variable.');
+  return null;
+}
+
+function loadCredentials() {
+  const envKeys = [
+    'GOOGLE_CALENDAR_CREDENTIALS',
+    'GOOGLE_SERVICE_ACCOUNT_JSON',
+    'GOOGLE_SERVICE_ACCOUNT'
+  ];
+
+  for (const key of envKeys) {
+    const value = process.env[key];
+    if (!value) continue;
+    const parsed = tryParseCredentials(value);
+    if (parsed) return parsed;
+  }
+
+  if (fs.existsSync(CREDENTIALS_PATH)) {
+    try {
+      const fileContents = fs.readFileSync(CREDENTIALS_PATH, 'utf8');
+      const parsed = JSON.parse(fileContents);
+      if (parsed.private_key) {
+        parsed.private_key = normalisePrivateKey(parsed.private_key);
+      }
+      return parsed;
+    } catch (err) {
+      console.warn('Failed to read calendar credentials file:', err.message);
+    }
+  }
+
+  return null;
+}
+
+const credentials = loadCredentials();
 
 // Helper to get Google Calendar client (service account example)
 function getCalendarClient() {
