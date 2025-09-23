@@ -1,8 +1,4 @@
 const { google } = require('googleapis');
-const path = require('path');
-const fs = require('fs');
-
-const CREDENTIALS_PATH = path.join(__dirname, '../config/google-credentials.json');
 
 function normalisePrivateKey(key) {
   if (typeof key !== 'string') return key;
@@ -69,40 +65,6 @@ function loadCredentials() {
   for (const [emailKey, keyKey] of fieldCombos) {
     const creds = buildCredentialsFromFields(emailKey, keyKey);
     if (creds) return creds;
-  }
-
-  const pathKeys = [
-    'GOOGLE_CALENDAR_CREDENTIALS_PATH',
-    'GOOGLE_SERVICE_ACCOUNT_PATH',
-    'GOOGLE_APPLICATION_CREDENTIALS'
-  ];
-
-  for (const key of pathKeys) {
-    const filePath = process.env[key];
-    if (!filePath) continue;
-    try {
-      const content = fs.readFileSync(filePath, 'utf8');
-      const parsed = JSON.parse(content);
-      if (parsed.private_key) {
-        parsed.private_key = normalisePrivateKey(parsed.private_key);
-      }
-      return parsed;
-    } catch (err) {
-      console.warn(`Failed to read calendar credentials from path env \"${key}\":`, err.message);
-    }
-  }
-
-  if (fs.existsSync(CREDENTIALS_PATH)) {
-    try {
-      const fileContents = fs.readFileSync(CREDENTIALS_PATH, 'utf8');
-      const parsed = JSON.parse(fileContents);
-      if (parsed.private_key) {
-        parsed.private_key = normalisePrivateKey(parsed.private_key);
-      }
-      return parsed;
-    } catch (err) {
-      console.warn('Failed to read calendar credentials file:', err.message);
-    }
   }
 
   return null;
