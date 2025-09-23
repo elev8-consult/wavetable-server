@@ -9,6 +9,16 @@ function normalisePrivateKey(key) {
   return key.replace(/\\n/g, '\n');
 }
 
+function buildCredentialsFromFields(emailKey, keyKey) {
+  const clientEmail = process.env[emailKey];
+  const privateKey = process.env[keyKey];
+  if (!clientEmail || !privateKey) return null;
+  return {
+    client_email: clientEmail,
+    private_key: normalisePrivateKey(privateKey),
+  };
+}
+
 function tryParseCredentials(raw) {
   if (!raw) return null;
   const candidates = [];
@@ -49,6 +59,37 @@ function loadCredentials() {
     if (!value) continue;
     const parsed = tryParseCredentials(value);
     if (parsed) return parsed;
+  }
+
+  const fieldCombos = [
+    ['GOOGLE_SERVICE_ACCOUNT_EMAIL', 'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY'],
+    ['GOOGLE_CALENDAR_CLIENT_EMAIL', 'GOOGLE_CALENDAR_PRIVATE_KEY'],
+    ['GOOGLE_CLIENT_EMAIL', 'GOOGLE_PRIVATE_KEY'],
+  ];
+  for (const [emailKey, keyKey] of fieldCombos) {
+    const creds = buildCredentialsFromFields(emailKey, keyKey);
+    if (creds) return creds;
+  }
+
+  const pathKeys = [
+    'GOOGLE_CALENDAR_CREDENTIALS_PATH',
+    'GOOGLE_SERVICE_ACCOUNT_PATH',
+    'GOOGLE_APPLICATION_CREDENTIALS'
+  ];
+
+  for (const key of pathKeys) {
+    const filePath = process.env[key];
+    if (!filePath) continue;
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const parsed = JSON.parse(content);
+      if (parsed.private_key) {
+        parsed.private_key = normalisePrivateKey(parsed.private_key);
+      }
+      return parsed;
+    } catch (err) {
+      console.warn(`Failed to read calendar credentials from path env \"${key}\":`, err.message);
+    }
   }
 
   if (fs.existsSync(CREDENTIALS_PATH)) {
