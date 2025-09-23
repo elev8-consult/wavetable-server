@@ -1,1 +1,6 @@
 node_modules
+config/google-credentials.json
+.DS_Store
+.env
+.env.local
+.env.*.local
