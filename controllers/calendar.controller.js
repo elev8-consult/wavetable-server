@@ -82,10 +82,27 @@ function loadCredentials() {
 
 const credentials = loadCredentials();
 
+function buildJwtCalendarClient() {
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const rawKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+  if (!email || !rawKey) return null;
+  const auth = new google.auth.JWT(
+    email,
+    undefined,
+    normalisePrivateKey(rawKey),
+    ['https://www.googleapis.com/auth/calendar']
+  );
+  return google.calendar({ version: 'v3', auth });
+}
+
 // Helper to get Google Calendar client (service account example)
 function getCalendarClient() {
-  if (!credentials || !process.env.GOOGLE_CALENDAR_ID) {
-    // No credentials or calendar configured — return null and let callers handle gracefully
+  if (!process.env.GOOGLE_CALENDAR_ID) return null;
+
+  const jwtClient = buildJwtCalendarClient();
+  if (jwtClient) return jwtClient;
+
+  if (!credentials) {
     return null;
   }
   const auth = new google.auth.GoogleAuth({
@@ -122,7 +139,13 @@ exports.getEvents = async (req, res) => {
     }
     res.json(events);
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching calendar events', error: error.message });
+    console.error('Calendar events fetch failed:', error.response?.data || error.message || error);
+    res.status(500).json({
+      message: 'Error fetching calendar events',
+      error: error.message,
+      code: error.code || error.status || error?.response?.status,
+      details: error?.response?.data || null,
+    });
   }
 };
 
