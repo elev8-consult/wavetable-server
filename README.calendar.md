@@ -10,11 +10,12 @@ Setup
 2) Service Account: Create a service account and a JSON key. Download the key.
 3) Share Calendar: In Google Calendar UI, share the target calendar with the service account's email ("Make changes to events").
 4) Env Vars: In `server/.env`, provide the service account credentials and calendar metadata. Pick one of:
-   - `GOOGLE_SERVICE_ACCOUNT_JSON` set to the raw JSON (or base64-encoded JSON) for the service account key, **or**
-   - `GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` (use `\n` for newlines inside the private key).
-   - Optional aliases: `GOOGLE_CALENDAR_CREDENTIALS` or `GOOGLE_CLIENT_EMAIL`/`GOOGLE_PRIVATE_KEY` are also accepted.
-   - Always set `GOOGLE_CALENDAR_ID` to the calendar's ID (e.g., `your@gmail.com` or `abc123@group.calendar.google.com`).
-   - Optional: `GOOGLE_CALENDAR_TZ` (default `UTC`).
+ - `GOOGLE_SERVICE_ACCOUNT_JSON` set to the raw JSON (or base64-encoded JSON) for the service account key, **or**
+  - `GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` (use `\n` for newlines inside the private key).
+  - Optional aliases: `GOOGLE_CALENDAR_CREDENTIALS` or `GOOGLE_CLIENT_EMAIL`/`GOOGLE_PRIVATE_KEY` are also accepted.
+  - Optional metadata envs (used to mirror the JSON file) are supported: `GOOGLE_SERVICE_ACCOUNT_TYPE`, `GOOGLE_SERVICE_ACCOUNT_PROJECT_ID`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_ID`, `GOOGLE_SERVICE_ACCOUNT_CLIENT_ID`, `GOOGLE_SERVICE_ACCOUNT_AUTH_URI`, `GOOGLE_SERVICE_ACCOUNT_TOKEN_URI`, `GOOGLE_SERVICE_ACCOUNT_AUTH_PROVIDER_X509_CERT_URL`, `GOOGLE_SERVICE_ACCOUNT_CLIENT_X509_CERT_URL`, `GOOGLE_SERVICE_ACCOUNT_UNIVERSE_DOMAIN`.
+  - Always set `GOOGLE_CALENDAR_ID` to the calendar's ID (e.g., `your@gmail.com` or `abc123@group.calendar.google.com`).
+ - Optional: `GOOGLE_CALENDAR_TZ` (default `UTC`).
 5) Restart the server.
 
 Behavior

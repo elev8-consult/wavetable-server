@@ -9,10 +9,25 @@ function buildCredentialsFromFields(emailKey, keyKey) {
   const clientEmail = process.env[emailKey];
   const privateKey = process.env[keyKey];
   if (!clientEmail || !privateKey) return null;
-  return {
+  const creds = {
     client_email: clientEmail,
     private_key: normalisePrivateKey(privateKey),
   };
+  const optionalFields = {
+    type: process.env.GOOGLE_SERVICE_ACCOUNT_TYPE,
+    project_id: process.env.GOOGLE_SERVICE_ACCOUNT_PROJECT_ID,
+    private_key_id: process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_ID,
+    token_uri: process.env.GOOGLE_SERVICE_ACCOUNT_TOKEN_URI,
+    auth_uri: process.env.GOOGLE_SERVICE_ACCOUNT_AUTH_URI,
+    auth_provider_x509_cert_url: process.env.GOOGLE_SERVICE_ACCOUNT_AUTH_PROVIDER_X509_CERT_URL,
+    client_id: process.env.GOOGLE_SERVICE_ACCOUNT_CLIENT_ID,
+    client_x509_cert_url: process.env.GOOGLE_SERVICE_ACCOUNT_CLIENT_X509_CERT_URL,
+    universe_domain: process.env.GOOGLE_SERVICE_ACCOUNT_UNIVERSE_DOMAIN,
+  };
+  Object.entries(optionalFields).forEach(([field, value]) => {
+    if (value) creds[field] = value;
+  });
+  return creds;
 }
 
 function tryParseCredentials(raw) {
@@ -24,9 +39,7 @@ function tryParseCredentials(raw) {
     try {
       const decoded = Buffer.from(trimmed, 'base64').toString('utf8');
       candidates.push(decoded.trim());
-    } catch (err) {
-      console.warn('Failed to base64 decode GOOGLE_CALENDAR credentials env:', err.message);
-    }
+    } catch (_) {}
   }
   for (const candidate of candidates) {
     try {
@@ -35,11 +48,8 @@ function tryParseCredentials(raw) {
         parsed.private_key = normalisePrivateKey(parsed.private_key);
       }
       return parsed;
-    } catch (_) {
-      // try next candidate
-    }
+    } catch (_) {}
   }
-  console.warn('Unable to parse GOOGLE calendar credentials from environment variable.');
   return null;
 }
 
