@@ -1,4 +1,6 @@
 const { google } = require('googleapis');
+const fs = require('fs');
+const path = require('path');
 
 function normalisePrivateKey(key) {
   if (typeof key !== 'string') return key;
@@ -81,6 +83,22 @@ function loadCredentials() {
 }
 
 const credentials = loadCredentials();
+const GENERATED_CREDENTIALS_PATH = path.join(__dirname, '../config/google-credentials.json');
+
+function persistCredentialsFile(creds) {
+  if (!creds) return;
+  try {
+    fs.mkdirSync(path.dirname(GENERATED_CREDENTIALS_PATH), { recursive: true });
+    fs.writeFileSync(GENERATED_CREDENTIALS_PATH, JSON.stringify(creds, null, 2), 'utf8');
+    if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      process.env.GOOGLE_APPLICATION_CREDENTIALS = GENERATED_CREDENTIALS_PATH;
+    }
+  } catch (err) {
+    console.warn('Failed to persist Google credentials file:', err.message);
+  }
+}
+
+persistCredentialsFile(credentials);
 
 function buildJwtCalendarClient() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;

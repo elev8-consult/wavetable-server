@@ -15,8 +15,11 @@ Setup
   - Optional aliases: `GOOGLE_CALENDAR_CREDENTIALS` or `GOOGLE_CLIENT_EMAIL`/`GOOGLE_PRIVATE_KEY` are also accepted.
   - Optional metadata envs (used to mirror the JSON file) are supported: `GOOGLE_SERVICE_ACCOUNT_TYPE`, `GOOGLE_SERVICE_ACCOUNT_PROJECT_ID`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_ID`, `GOOGLE_SERVICE_ACCOUNT_CLIENT_ID`, `GOOGLE_SERVICE_ACCOUNT_AUTH_URI`, `GOOGLE_SERVICE_ACCOUNT_TOKEN_URI`, `GOOGLE_SERVICE_ACCOUNT_AUTH_PROVIDER_X509_CERT_URL`, `GOOGLE_SERVICE_ACCOUNT_CLIENT_X509_CERT_URL`, `GOOGLE_SERVICE_ACCOUNT_UNIVERSE_DOMAIN`.
   - Always set `GOOGLE_CALENDAR_ID` to the calendar's ID (e.g., `your@gmail.com` or `abc123@group.calendar.google.com`).
- - Optional: `GOOGLE_CALENDAR_TZ` (default `UTC`).
+  - Optional: `GOOGLE_CALENDAR_TZ` (default `UTC`).
 5) Restart the server.
+
+Runtime Notes
+- If credentials are provided via env vars, the server now materialises `config/google-credentials.json` on startup (and exports its path via `GOOGLE_APPLICATION_CREDENTIALS` when unset) so file-based tools keep working without committing sensitive JSON to git.
 
 Behavior
 - Creates events for bookings with start/end times.
