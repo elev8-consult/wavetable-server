@@ -14,7 +14,6 @@ const CALENDAR_TZ = process.env.GOOGLE_CALENDAR_TZ || 'UTC';
 
 async function buildCalendarEventFromBooking(booking) {
   // Guard: only create if we have times and calendar configured
-  if (!CALENDAR_ID) return null;
   if (!booking.startDate) return null;
 
   let endDate = booking.endDate ? new Date(booking.endDate) : null;
