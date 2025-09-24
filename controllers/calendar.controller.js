@@ -3,22 +3,62 @@ const path = require('path');
 const fs = require('fs');
 
 const CREDENTIALS_PATH = path.join(__dirname, '../config/google-credentials.json');
-let credentials = null;
+let cachedCredentials = null;
+
+function normalisePrivateKey(key) {
+  if (typeof key !== 'string') return key;
+  return key.replace(/\\n/g, '\n');
+}
 
 function loadCredentials() {
-  if (credentials) return credentials;
-  try {
-    if (fs.existsSync(CREDENTIALS_PATH)) {
-      credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, 'utf8'));
-    } else {
-      console.warn('Google credentials file not found at', CREDENTIALS_PATH);
-      credentials = null;
+  if (cachedCredentials) return cachedCredentials;
+  if (fs.existsSync(CREDENTIALS_PATH)) {
+    try {
+      cachedCredentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, 'utf8'));
+      return cachedCredentials;
+    } catch (err) {
+      console.error('Failed to load Google credentials file:', err.message);
     }
-  } catch (err) {
-    console.error('Failed to load Google credentials:', err.message);
-    credentials = null;
   }
-  return credentials;
+
+  const envJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (envJson) {
+    try {
+      cachedCredentials = JSON.parse(envJson);
+      return cachedCredentials;
+    } catch (err) {
+      console.error('Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON:', err.message);
+    }
+  }
+
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  let privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+  if (!privateKey && process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_B64) {
+    try {
+      privateKey = Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_B64, 'base64').toString('utf8');
+    } catch (err) {
+      console.error('Failed to decode GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_B64:', err.message);
+    }
+  }
+  if (email && privateKey) {
+    cachedCredentials = {
+      type: process.env.GOOGLE_SERVICE_ACCOUNT_TYPE || 'service_account',
+      project_id: process.env.GOOGLE_SERVICE_ACCOUNT_PROJECT_ID,
+      private_key_id: process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_ID,
+      private_key: normalisePrivateKey(privateKey),
+      client_email: email,
+      client_id: process.env.GOOGLE_SERVICE_ACCOUNT_CLIENT_ID,
+      auth_uri: process.env.GOOGLE_SERVICE_ACCOUNT_AUTH_URI || 'https://accounts.google.com/o/oauth2/auth',
+      token_uri: process.env.GOOGLE_SERVICE_ACCOUNT_TOKEN_URI || 'https://oauth2.googleapis.com/token',
+      auth_provider_x509_cert_url: process.env.GOOGLE_SERVICE_ACCOUNT_AUTH_PROVIDER_X509_CERT_URL || 'https://www.googleapis.com/oauth2/v1/certs',
+      client_x509_cert_url: process.env.GOOGLE_SERVICE_ACCOUNT_CLIENT_X509_CERT_URL,
+      universe_domain: process.env.GOOGLE_SERVICE_ACCOUNT_UNIVERSE_DOMAIN || 'googleapis.com',
+    };
+    return cachedCredentials;
+  }
+
+  console.warn('Google credentials not found. Provide config/google-credentials.json or service account env vars.');
+  return null;
 }
 
 function getCalendarClient() {
