@@ -8,7 +8,7 @@ Overview
 Setup
 1) Enable API: In Google Cloud Console, enable the "Google Calendar API" for your project.
 2) Service Account: Create a service account and download a JSON key.
-3) Place Credentials: Save the JSON key at `wavetable-server/config/google-credentials.json`. If the file is missing, the server will fall back to the environment variables described below.
+3) Place Credentials: Save the JSON key at `wavetable-server/config/google-credentials.json`. On Railway (or similar container platforms) you can mount the file at `/data/google-credential.json`, or set `GOOGLE_CREDENTIALS_PATH` to point at a custom location. If the file is missing, the server will fall back to the environment variables described below.
 4) Share Calendar: In Google Calendar, share the target calendar with the service account email ("Make changes to events").
 5) Env Vars: In `.env`, set at minimum:
    - `GOOGLE_CALENDAR_ID` to the calendar's ID (e.g., `your@gmail.com` or `abc123@group.calendar.google.com`).

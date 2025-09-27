@@ -2,8 +2,25 @@ const { google } = require('googleapis');
 const path = require('path');
 const fs = require('fs');
 
-const CREDENTIALS_PATH = path.join(__dirname, '../config/google-credentials.json');
+const LOCAL_CREDENTIALS_PATH = path.join(__dirname, '../config/google-credentials.json');
+const CREDENTIAL_PATH_CANDIDATES = [
+  process.env.GOOGLE_CREDENTIALS_PATH && path.resolve(process.env.GOOGLE_CREDENTIALS_PATH),
+  path.resolve('/data/google-credentials.json'),
+  path.resolve('/data/google-credential.json'),
+  LOCAL_CREDENTIALS_PATH,
+  path.join(__dirname, '../config/google-credential.json'),
+].filter(Boolean);
+
 let cachedCredentials = null;
+
+function resolveCredentialsPath() {
+  for (const candidate of CREDENTIAL_PATH_CANDIDATES) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
 
 function normalisePrivateKey(key) {
   if (typeof key !== 'string') return key;
@@ -12,9 +29,10 @@ function normalisePrivateKey(key) {
 
 function loadCredentials() {
   if (cachedCredentials) return cachedCredentials;
-  if (fs.existsSync(CREDENTIALS_PATH)) {
+  const filePath = resolveCredentialsPath();
+  if (filePath) {
     try {
-      cachedCredentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, 'utf8'));
+      cachedCredentials = JSON.parse(fs.readFileSync(filePath, 'utf8'));
       return cachedCredentials;
     } catch (err) {
       console.error('Failed to load Google credentials file:', err.message);
@@ -66,8 +84,8 @@ function loadCredentials() {
 function persistCredentialsFile(creds) {
   if (!creds) return;
   try {
-    fs.mkdirSync(path.dirname(CREDENTIALS_PATH), { recursive: true });
-    fs.writeFileSync(CREDENTIALS_PATH, JSON.stringify(creds, null, 2), 'utf8');
+    fs.mkdirSync(path.dirname(LOCAL_CREDENTIALS_PATH), { recursive: true });
+    fs.writeFileSync(LOCAL_CREDENTIALS_PATH, JSON.stringify(creds, null, 2), 'utf8');
   } catch (err) {
     console.warn('Failed to persist Google credentials file:', err.message);
   }
