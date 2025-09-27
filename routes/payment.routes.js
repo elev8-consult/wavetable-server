@@ -10,6 +10,9 @@ router.post('/', auth(['staff', 'admin']), paymentController.createPayment);
 // List/search payments (staff or admin)
 router.get('/', auth(['staff', 'admin']), paymentController.getPayments);
 
+// Aggregated booking payment summary (staff or admin)
+router.get('/summary', auth(['staff', 'admin']), paymentController.getPaymentSummaries);
+
 // Get payment details (staff or admin)
 router.get('/:id', auth(['staff', 'admin']), paymentController.getPaymentById);
 
