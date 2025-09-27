@@ -25,6 +25,7 @@ function loadCredentials() {
   if (envJson) {
     try {
       cachedCredentials = JSON.parse(envJson);
+      persistCredentialsFile(cachedCredentials);
       return cachedCredentials;
     } catch (err) {
       console.error('Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON:', err.message);
@@ -54,11 +55,22 @@ function loadCredentials() {
       client_x509_cert_url: process.env.GOOGLE_SERVICE_ACCOUNT_CLIENT_X509_CERT_URL,
       universe_domain: process.env.GOOGLE_SERVICE_ACCOUNT_UNIVERSE_DOMAIN || 'googleapis.com',
     };
+    persistCredentialsFile(cachedCredentials);
     return cachedCredentials;
   }
 
   console.warn('Google credentials not found. Provide config/google-credentials.json or service account env vars.');
   return null;
+}
+
+function persistCredentialsFile(creds) {
+  if (!creds) return;
+  try {
+    fs.mkdirSync(path.dirname(CREDENTIALS_PATH), { recursive: true });
+    fs.writeFileSync(CREDENTIALS_PATH, JSON.stringify(creds, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('Failed to persist Google credentials file:', err.message);
+  }
 }
 
 function getCalendarClient() {

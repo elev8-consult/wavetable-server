@@ -13,7 +13,7 @@ Setup
 5) Env Vars: In `.env`, set at minimum:
    - `GOOGLE_CALENDAR_ID` to the calendar's ID (e.g., `your@gmail.com` or `abc123@group.calendar.google.com`).
    - Optional: `GOOGLE_CALENDAR_TZ` (default `UTC`).
-   - To avoid storing a key file, you can instead set `GOOGLE_SERVICE_ACCOUNT_JSON`, or provide `GOOGLE_SERVICE_ACCOUNT_EMAIL` plus `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` (or `..._PRIVATE_KEY_B64`) along with supporting metadata (`..._PROJECT_ID`, etc.).
+   - To avoid storing a key file, you may supply `GOOGLE_SERVICE_ACCOUNT_JSON` or the email/private-key env vars; the app will write `config/google-credentials.json` automatically at runtime.
 6) Restart the server.
 
 Behavior
